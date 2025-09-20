@@ -3,7 +3,7 @@ import json
 import os
 
 # --- Configuration ---
-INPUT_CSV_FILE = 'finalfile.csv'
+INPUT_CSV_FILE = 'occurrence.csv'
 OUTPUT_JS_FILE = 'src/mockdata.js'
 
 # --- NOTE: 'eventDate' is no longer a required column for cleaning ---

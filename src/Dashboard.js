@@ -22,17 +22,43 @@ const Dashboard = () => {
   const [showMarkers, setShowMarkers] = useState(true);
 
   // Step 1: Calculate constants from the data. This is a pure calculation, perfect for useMemo.
+ 
+// src/Dashboard.js
+
+  // Replace the existing useMemo block with this corrected version
   const { uniqueSpecies, dateRange } = useMemo(() => {
     if (!fisheriesData || !fisheriesData.features || fisheriesData.features.length === 0) {
       return { uniqueSpecies: ["All"], dateRange: { min: '', max: '' } };
     }
-    const species = ["All", ...new Set(fisheriesData.features.map(f => f.properties.species))];
-    const dates = fisheriesData.features.map(f => new Date(f.properties.date));
-    const minDate = new Date(Math.min.apply(null, dates)).toISOString().split('T')[0];
-    const maxDate = new Date(Math.max.apply(null, dates)).toISOString().split('T')[0];
     
-    return { uniqueSpecies: species, dateRange: { min: minDate, max: maxDate } };
+    // First, filter out any features that have a bad or missing date
+    const featuresWithValidDates = fisheriesData.features.filter(
+      f => f.properties.date && !isNaN(new Date(f.properties.date))
+    );
+
+    // If no data remains after filtering, return a default value to prevent a crash
+    if (featuresWithValidDates.length === 0) {
+      return { 
+        uniqueSpecies: ["All", ...new Set(fisheriesData.features.map(f => f.properties.species))], 
+        dateRange: { min: '', max: '' } 
+      };
+    }
+
+    const species = ["All", ...new Set(fisheriesData.features.map(f => f.properties.species))];
+    // Now, perform calculations only on the clean data
+    const dates = featuresWithValidDates.map(f => new Date(f.properties.date));
+    const minDate = new Date(Math.min.apply(null, dates));
+    const maxDate = new Date(Math.max.apply(null, dates));
+    
+    return { 
+      uniqueSpecies: species, 
+      dateRange: { 
+        min: minDate.toISOString().split('T')[0], 
+        max: maxDate.toISOString().split('T')[0] 
+      } 
+    };
   }, []);
+  
 
   // Step 2: Set the initial date filter once the component mounts and dateRange is calculated.
   useEffect(() => {
