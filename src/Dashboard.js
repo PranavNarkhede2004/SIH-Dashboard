@@ -24,8 +24,8 @@ const getColor = (abundance, maxAbundance) => {
   return '#91cf60';              // Green
 };
 
-// --- NEW: Legend Component ---
-const Legend = ({ map, maxAbundance }) => {
+// --- Legend for Circle Markers ---
+const CircleLegend = ({ map, maxAbundance }) => {
   useEffect(() => {
     if (map) {
       const legend = L.control({ position: "bottomright" });
@@ -37,9 +37,7 @@ const Legend = ({ map, maxAbundance }) => {
           const from = grades[i];
           const to = grades[i + 1];
           labels.push(
-            '<i style="background:' +
-            getColor(from + 1, maxAbundance) +
-            '"></i> ' +
+            '<i style="background:' + getColor(from + 1, maxAbundance) + '"></i> ' +
             from + (to ? '&ndash;' + to : '+')
           );
         }
@@ -47,37 +45,91 @@ const Legend = ({ map, maxAbundance }) => {
         return div;
       };
       legend.addTo(map);
-
-      // Cleanup function to remove the legend when the component unmounts
-      return () => {
-        if (legend._map) {
-          legend.remove();
-        }
-      };
+      return () => { if (legend._map) legend.remove(); };
     }
   }, [map, maxAbundance]);
   return null;
 };
 
+// --- Legend for Heatmap ---
+const HeatmapLegend = ({ map }) => {
+  useEffect(() => {
+    if (map) {
+      const legend = L.control({ position: 'bottomright' });
+      legend.onAdd = function () {
+        const div = L.DomUtil.create('div', 'info legend heatmap-legend');
+        div.innerHTML =
+          '<strong>Density</strong><br>' +
+          '<div class="gradient-bar"></div>' +
+          '<div><span>Low</span><span style="float:right">High</span></div>';
+        return div;
+      };
+      legend.addTo(map);
+      return () => { if (legend._map) legend.remove(); };
+    }
+  }, [map]);
+  return null;
+};
+
+// --- Interactive Bar Chart Component ---
+const SpeciesBarChart = ({ data, onBarClick }) => {
+    const topSpecies = useMemo(() => {
+      if (!data || data.length === 0) return [];
+  
+      const counts = data.reduce((acc, feature) => {
+        const species = feature.properties.species;
+        acc[species] = (acc[species] || 0) + 1;
+        return acc;
+      }, {});
+  
+      return Object.entries(counts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10);
+    }, [data]);
+  
+    if (topSpecies.length === 0) {
+      return <div className="chart-container"><p>No data to display in chart.</p></div>;
+    }
+  
+    const maxCount = topSpecies[0][1];
+  
+    return (
+      <div className="chart-container">
+        <h4>Top 10 Species</h4>
+        {topSpecies.map(([species, count]) => (
+          <div key={species} className="bar-row" onClick={() => onBarClick(species)}>
+            <div className="bar-label" title={species}>{species}</div>
+            <div className="bar-wrapper">
+              <div 
+                className="bar" 
+                style={{ width: `${(count / maxCount) * 100}%` }}
+              >
+                <span>{count}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+};
+
 
 const Dashboard = () => {
   const [map, setMap] = useState(null);
-  const [filteredData, setFilteredData] = useState([]);
+  // --- FIX: Create separate state for the map and the chart ---
+  const [mapData, setMapData] = useState([]);
+  const [chartData, setChartData] = useState([]);
+  
   const [speciesFilter, setSpeciesFilter] = useState("All");
   const [dateFilter, setDateFilter] = useState("");
-  const [showHeatmap, setShowHeatmap] = useState(false);
-  const [showMarkers, setShowMarkers] = useState(true);
+  const [showHeatmap, setShowHeatmap] = useState(true);
+  const [showMarkers, setShowMarkers] = useState(false);
 
-  // Calculate unique species, date range, and max abundance from the data
   const { uniqueSpecies, dateRange, maxAbundance } = useMemo(() => {
     if (!fisheriesData || !fisheriesData.features || fisheriesData.features.length === 0) {
       return { uniqueSpecies: ["All"], dateRange: { min: '', max: '' }, maxAbundance: 0 };
     }
-    
-    const featuresWithValidDates = fisheriesData.features.filter(
-      f => f.properties.date && !isNaN(new Date(f.properties.date))
-    );
-
+    const featuresWithValidDates = fisheriesData.features.filter(f => f.properties.date && !isNaN(new Date(f.properties.date)));
     if (featuresWithValidDates.length === 0) {
       return { 
         uniqueSpecies: ["All", ...new Set(fisheriesData.features.map(f => f.properties.species))], 
@@ -85,75 +137,76 @@ const Dashboard = () => {
         maxAbundance: Math.max(0, ...fisheriesData.features.map(f => f.properties.abundance || 0))
       };
     }
-
     const species = ["All", ...new Set(fisheriesData.features.map(f => f.properties.species))];
     const dates = featuresWithValidDates.map(f => new Date(f.properties.date));
     const abundances = fisheriesData.features.map(f => f.properties.abundance || 0);
-
     const minDate = new Date(Math.min.apply(null, dates));
     const maxDate = new Date(Math.max.apply(null, dates));
-    
     return { 
       uniqueSpecies: species, 
-      dateRange: { 
-        min: minDate.toISOString().split('T')[0], 
-        max: maxDate.toISOString().split('T')[0] 
-      },
+      dateRange: { min: minDate.toISOString().split('T')[0], max: maxDate.toISOString().split('T')[0] },
       maxAbundance: Math.max(0, ...abundances)
     };
   }, []);
 
-  // Set the initial date filter once
   useEffect(() => {
-    if (dateRange.max) {
-      setDateFilter(dateRange.max);
-    }
+    if (dateRange.max) setDateFilter(dateRange.max);
   }, [dateRange]);
 
-  // Filter data based on user selections
+  // --- FIX: This effect updates the data for BOTH the map and the chart when the date changes ---
   useEffect(() => {
-    const filtered = fisheriesData.features.filter(feature => {
+    const filteredByDate = fisheriesData.features.filter(feature => {
       const { properties } = feature;
-      const speciesMatch = speciesFilter === "All" || properties.species === speciesFilter;
       const dateIsValid = properties.date && !isNaN(new Date(properties.date));
       const dateMatch = dateFilter && dateIsValid ? new Date(properties.date) <= new Date(dateFilter) : true;
-      return speciesMatch && dateMatch;
+      return dateMatch;
     });
-    setFilteredData(filtered);
-  }, [speciesFilter, dateFilter]);
+    setChartData(filteredByDate); // The chart always shows data filtered by date
+    setMapData(filteredByDate); // The map starts with the same data
+  }, [dateFilter]);
 
-  // Auto-zoom to fit all data
+
+  // --- FIX: This effect ONLY updates the map when the species filter changes ---
+  useEffect(() => {
+    if (speciesFilter === 'All') {
+      setMapData(chartData); // If "All" is selected, map shows everything from the chart
+    } else {
+      const filteredBySpecies = chartData.filter(feature => feature.properties.species === speciesFilter);
+      setMapData(filteredBySpecies); // Otherwise, filter the map by the selected species
+    }
+  }, [speciesFilter, chartData]);
+
   useEffect(() => {
     if (!map || !fisheriesData.features || fisheriesData.features.length === 0) return;
     const latLngs = fisheriesData.features.map(f => [f.geometry.coordinates[1], f.geometry.coordinates[0]]);
     const bounds = L.latLngBounds(latLngs);
-    if (bounds.isValid()) {
-      map.fitBounds(bounds, { padding: [50, 50] });
-    }
+    if (bounds.isValid()) map.fitBounds(bounds, { padding: [50, 50] });
   }, [map]);
 
-  // Update heatmap when data changes
   useEffect(() => {
     if (!map) return;
     map.eachLayer(layer => { if (layer instanceof L.HeatLayer) map.removeLayer(layer); });
-    if (showHeatmap && filteredData.length > 0) {
-      const points = filteredData.map(f => [f.geometry.coordinates[1], f.geometry.coordinates[0], f.properties.abundance]);
-      L.heatLayer(points, { radius: 25, blur: 15, maxZoom: 12 }).addTo(map);
+    if (showHeatmap && mapData.length > 0) { // <-- Uses mapData
+      const points = mapData.map(f => [f.geometry.coordinates[1], f.geometry.coordinates[0], f.properties.abundance]);
+      L.heatLayer(points, { 
+        radius: 25, 
+        blur: 15, 
+        maxZoom: 12,
+        gradient: {0.2: '#91cf60', 0.4: '#d9ef8b', 0.6: '#fee08b', 0.8: '#fc8d59', 1.0: '#d73027'}
+      }).addTo(map);
     }
-  }, [filteredData, map, showHeatmap]);
+  }, [mapData, map, showHeatmap]); // <-- Now depends on mapData
   
-  // Calculate summary statistics
   const summaryStats = useMemo(() => {
-    const totalSightings = filteredData.length;
+    const totalSightings = mapData.length; // <-- Uses mapData
     if (totalSightings === 0) return { totalSightings: 0, avgAbundance: 0 };
-    const totalAbundance = filteredData.reduce((sum, f) => sum + (f.properties.abundance || 1), 0);
+    const totalAbundance = mapData.reduce((sum, f) => sum + (f.properties.abundance || 1), 0);
     const avgAbundance = (totalAbundance / totalSightings).toFixed(2);
     return { totalSightings, avgAbundance };
-  }, [filteredData]);
+  }, [mapData]); // <-- Now depends on mapData
 
   return (
     <div className="dashboard-container">
-      {/* Sidebar remains the same */}
       <div className="sidebar">
         <h2>Fisheries Dashboard</h2>
         <hr />
@@ -179,57 +232,48 @@ const Dashboard = () => {
           <div className="checkbox-group"><input type="checkbox" id="heatmap-toggle" checked={showHeatmap} onChange={() => setShowHeatmap(!showHeatmap)} /><label htmlFor="heatmap-toggle">Show Abundance Heatmap</label></div>
           <div className="checkbox-group"><input type="checkbox" id="markers-toggle" checked={showMarkers} onChange={() => setShowMarkers(!showMarkers)} /><label htmlFor="markers-toggle">Show Survey Points</label></div>
         </div>
+        <hr />
+        {/* --- The chart now gets data filtered only by date --- */}
+        <SpeciesBarChart data={chartData} onBarClick={setSpeciesFilter} />
       </div>
       
-      {/* Map Container */}
       <MapContainer center={[15.0, 78.0]} zoom={5} scrollWheelZoom={true} className="map-view" whenCreated={setMap}>
-        {/* Style tag to avoid changing the CSS file */}
         <style>
           {`
-            .legend {
-              padding: 6px 8px;
-              font: 14px Arial, Helvetica, sans-serif;
-              background: white;
-              background: rgba(255, 255, 255, 0.8);
-              box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
-              border-radius: 5px;
-              line-height: 18px;
-              color: #555;
-            }
-            .legend i {
-              width: 18px;
-              height: 18px;
-              float: left;
-              margin-right: 8px;
-              opacity: 0.7;
-            }
+            .legend { padding: 6px 8px; font: 14px Arial, Helvetica, sans-serif; background: rgba(255, 255, 255, 0.8); box-shadow: 0 0 15px rgba(0, 0, 0, 0.2); border-radius: 5px; line-height: 18px; color: #555; }
+            .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
+            .heatmap-legend .gradient-bar { height: 10px; margin-top: 5px; margin-bottom: 5px; background: linear-gradient(to right, #91cf60, #d9ef8b, #fee08b, #fc8d59, #d73027); }
+            
+            .chart-container { margin-top: 20px; }
+            .chart-container h4 { margin-top: 0; color: #495057; border-bottom: 1px solid #ced4da; padding-bottom: 5px; }
+            .bar-row { display: flex; align-items: center; margin-bottom: 5px; cursor: pointer; }
+            .bar-row:hover .bar-label { color: #007bff; }
+            .bar-label { font-size: 12px; width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; margin-right: 5px; }
+            .bar-wrapper { flex-grow: 1; background-color: #e9ecef; border-radius: 3px; }
+            .bar { background-color: #007bff; height: 20px; border-radius: 3px; color: white; font-size: 12px; line-height: 20px; padding-left: 5px; transition: width 0.3s ease-in-out; }
           `}
         </style>
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         <GeoJSON data={eezBoundary} style={() => ({ color: "#007bff", weight: 2, fillOpacity: 0.1 })} />
-        <Legend map={map} maxAbundance={maxAbundance} />
+        
+        {showMarkers && <CircleLegend map={map} maxAbundance={maxAbundance} />}
+        {showHeatmap && <HeatmapLegend map={map} />}
 
-        {/* --- Render colored CircleMarkers instead of default Markers --- */}
-        {showMarkers && filteredData.map((feature, index) => {
+        {showMarkers && mapData.map((feature, index) => { // <-- Renders mapData
           const { species, abundance, date } = feature.properties;
           const [lng, lat] = feature.geometry.coordinates;
           const pathOptions = {
             color: getColor(abundance, maxAbundance),
             fillColor: getColor(abundance, maxAbundance),
             fillOpacity: 0.7,
-            radius: 5 + (abundance / maxAbundance) * 10 // Size also varies with abundance
+            radius: 5 + (abundance / maxAbundance) * 10
           };
-          
           return (
             <CircleMarker 
               key={index} 
               center={[lat, lng]} 
               pathOptions={pathOptions}
-              eventHandlers={{
-                click: () => {
-                  if (map) map.flyTo([lat, lng], 10);
-                },
-              }}
+              eventHandlers={{ click: () => { if (map) map.flyTo([lat, lng], 10); } }}
             >
               <Tooltip>{species}</Tooltip>
               <Popup><b>{species}</b><br/><b>Abundance:</b> {abundance} kg/haul<br/><b>Date:</b> {date}</Popup>
@@ -242,3 +286,4 @@ const Dashboard = () => {
 };
 
 export default Dashboard;
+
