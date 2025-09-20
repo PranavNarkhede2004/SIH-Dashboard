@@ -3,7 +3,8 @@ import { MapContainer, TileLayer, GeoJSON, CircleMarker, Popup, Tooltip } from "
 import L from "leaflet";
 import "leaflet.heat";
 import { fisheriesData, eezBoundary } from "./mockdata";
-import "./Dashboard.css";
+// We will embed the CSS directly, so this import is no longer needed.
+// import "./Dashboard.css";
 
 // Fix for default marker icon issue
 delete L.Icon.Default.prototype._getIconUrl;
@@ -88,14 +89,14 @@ const SpeciesBarChart = ({ data, onBarClick }) => {
     }, [data]);
   
     if (topSpecies.length === 0) {
-      return <div className="chart-container"><p>No data to display in chart.</p></div>;
+      return <div className="chart-container"><p style={{color: '#d0d0d0'}}>No data to display in chart.</p></div>;
     }
   
     const maxCount = topSpecies[0][1];
   
     return (
       <div className="chart-container">
-        <h4>Top 10 Species</h4>
+        <h4 className="sidebar-subtitle">Top Species</h4>
         {topSpecies.map(([species, count]) => (
           <div key={species} className="bar-row" onClick={() => onBarClick(species)}>
             <div className="bar-label" title={species}>{species}</div>
@@ -116,7 +117,6 @@ const SpeciesBarChart = ({ data, onBarClick }) => {
 
 const Dashboard = () => {
   const [map, setMap] = useState(null);
-  // --- FIX: Create separate state for the map and the chart ---
   const [mapData, setMapData] = useState([]);
   const [chartData, setChartData] = useState([]);
   
@@ -153,7 +153,6 @@ const Dashboard = () => {
     if (dateRange.max) setDateFilter(dateRange.max);
   }, [dateRange]);
 
-  // --- FIX: This effect updates the data for BOTH the map and the chart when the date changes ---
   useEffect(() => {
     const filteredByDate = fisheriesData.features.filter(feature => {
       const { properties } = feature;
@@ -161,18 +160,16 @@ const Dashboard = () => {
       const dateMatch = dateFilter && dateIsValid ? new Date(properties.date) <= new Date(dateFilter) : true;
       return dateMatch;
     });
-    setChartData(filteredByDate); // The chart always shows data filtered by date
-    setMapData(filteredByDate); // The map starts with the same data
+    setChartData(filteredByDate); 
   }, [dateFilter]);
 
 
-  // --- FIX: This effect ONLY updates the map when the species filter changes ---
   useEffect(() => {
     if (speciesFilter === 'All') {
-      setMapData(chartData); // If "All" is selected, map shows everything from the chart
+        setMapData(chartData);
     } else {
       const filteredBySpecies = chartData.filter(feature => feature.properties.species === speciesFilter);
-      setMapData(filteredBySpecies); // Otherwise, filter the map by the selected species
+      setMapData(filteredBySpecies);
     }
   }, [speciesFilter, chartData]);
 
@@ -186,7 +183,7 @@ const Dashboard = () => {
   useEffect(() => {
     if (!map) return;
     map.eachLayer(layer => { if (layer instanceof L.HeatLayer) map.removeLayer(layer); });
-    if (showHeatmap && mapData.length > 0) { // <-- Uses mapData
+    if (showHeatmap && mapData.length > 0) {
       const points = mapData.map(f => [f.geometry.coordinates[1], f.geometry.coordinates[0], f.properties.abundance]);
       L.heatLayer(points, { 
         radius: 25, 
@@ -195,71 +192,210 @@ const Dashboard = () => {
         gradient: {0.2: '#91cf60', 0.4: '#d9ef8b', 0.6: '#fee08b', 0.8: '#fc8d59', 1.0: '#d73027'}
       }).addTo(map);
     }
-  }, [mapData, map, showHeatmap]); // <-- Now depends on mapData
+  }, [mapData, map, showHeatmap]); 
   
   const summaryStats = useMemo(() => {
-    const totalSightings = mapData.length; // <-- Uses mapData
+    const totalSightings = mapData.length;
     if (totalSightings === 0) return { totalSightings: 0, avgAbundance: 0 };
     const totalAbundance = mapData.reduce((sum, f) => sum + (f.properties.abundance || 1), 0);
     const avgAbundance = (totalAbundance / totalSightings).toFixed(2);
     return { totalSightings, avgAbundance };
-  }, [mapData]); // <-- Now depends on mapData
+  }, [mapData]);
 
   return (
     <div className="dashboard-container">
+      <style>
+        {`
+          /* --- Global Styles --- */
+          .dashboard-container { display: flex; height: 100vh; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+          .map-view { flex-grow: 1; height: 100%; }
+
+          /* --- Vibrant & Natural Sidebar Styles --- */
+          .sidebar {
+              width: 350px;
+              background: linear-gradient(175deg, #13547a, #80d0c7); /* Teal/Aqua Gradient */
+              color: #ffffff;
+              display: flex;
+              flex-direction: column;
+              padding: 20px;
+              gap: 20px;
+              box-shadow: 3px 0 15px rgba(0,0,0,0.2);
+              overflow-y: auto;
+          }
+          .sidebar-header {
+              display: flex;
+              align-items: center;
+              gap: 12px;
+              padding-bottom: 15px;
+              border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+          }
+          .sidebar-header h1 {
+              font-size: 1.3em;
+              margin: 0;
+              font-weight: 500;
+          }
+          .sidebar-header svg {
+              stroke: #ffffff;
+              width: 28px;
+              height: 28px;
+          }
+          .stats-container {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 15px;
+          }
+          .stat-card {
+              background: rgba(255, 255, 255, 0.1);
+              border-radius: 10px;
+              padding: 15px;
+              display: flex;
+              align-items: center;
+              gap: 12px;
+              border: 1px solid rgba(255, 255, 255, 0.2);
+          }
+          .stat-icon {
+              padding: 10px;
+              border-radius: 50%;
+              background: rgba(255, 255, 255, 0.15);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+          }
+          .stat-icon svg { stroke: #ffffff; }
+          .stat-info { display: flex; flex-direction: column; }
+          .stat-title { font-size: 0.85em; opacity: 0.8; }
+          .stat-value { font-size: 1.5em; font-weight: bold; }
+
+          .filter-section {
+              background: rgba(255, 255, 255, 0.1);
+              border-radius: 10px;
+              padding: 20px;
+              border: 1px solid rgba(255, 255, 255, 0.2);
+          }
+          .sidebar-subtitle {
+              margin-top: 0;
+              margin-bottom: 15px;
+              font-size: 1.1em;
+              font-weight: 500;
+              color: #ffffff;
+          }
+          .filter-group { margin-bottom: 15px; }
+          .filter-group:last-child { margin-bottom: 0; }
+          .filter-group label { margin-bottom: 8px; font-size: 0.9em; opacity: 0.8; }
+          .filter-group select, .filter-group input[type="date"] {
+              width: 100%;
+              padding: 10px;
+              border-radius: 5px;
+              border: 1px solid rgba(255, 255, 255, 0.3);
+              background-color: rgba(0, 0, 0, 0.2);
+              color: #0d0606ff;
+              font-family: inherit;
+              -webkit-calendar-picker-indicator { filter: invert(1); }
+          }
+          .toggle-group { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; }
+          .toggle-group span { font-size: 1em; }
+
+          /* Modern Toggle Switch CSS */
+          .switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+          .switch input { opacity: 0; width: 0; height: 0; }
+          .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.3); transition: .4s; }
+          .slider.round { border-radius: 24px; }
+          .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+          input:checked + .slider { background-color: #80d0c7; } /* Teal accent */
+          input:checked + .slider:before { background-color: #13547a; transform: translateX(20px); } /* Darker teal */
+
+          /* --- Legend & Map Styles --- */
+          .legend { padding: 6px 8px; font: 14px Arial, Helvetica, sans-serif; background: rgba(255, 255, 255, 0.85); box-shadow: 0 0 15px rgba(0, 0, 0, 0.2); border-radius: 5px; line-height: 18px; color: #555; }
+          .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.9; border-radius: 50%;}
+          .heatmap-legend .gradient-bar { height: 10px; margin-top: 5px; margin-bottom: 5px; background: linear-gradient(to right, #91cf60, #d9ef8b, #fee08b, #fc8d59, #d73027); border-radius: 5px; }
+          
+          /* --- Vibrant Chart Styles --- */
+          .chart-container { 
+              background: rgba(255, 255, 255, 0.1);
+              border-radius: 10px;
+              padding: 20px;
+              border: 1px solid rgba(255, 255, 255, 0.2);
+          }
+          .bar-row { display: flex; align-items: center; margin-bottom: 8px; cursor: pointer; padding: 4px; border-radius: 5px; transition: background-color 0.2s; }
+          .bar-row:hover { background-color: rgba(255, 255, 255, 0.15); }
+          .bar-label { font-size: 12px; width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; margin-right: 8px; opacity: 0.8; }
+          .bar-row:hover .bar-label { opacity: 1; }
+          .bar-wrapper { flex-grow: 1; background-color: rgba(0, 0, 0, 0.2); border-radius: 5px; }
+          .bar { background: linear-gradient(to right, #f8dda4, #f5c469); /* Warm Yellow/Gold */ height: 22px; border-radius: 5px; color: #13547a; font-size: 12px; font-weight: bold; line-height: 22px; padding-left: 8px; transition: width 0.3s ease-in-out; }
+        `}
+      </style>
       <div className="sidebar">
-        <h2>Fisheries Dashboard</h2>
-        <hr />
+        <div className="sidebar-header">
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7.5 16.5s-1.5-1.5-1.5-3 1.5-3 1.5-3"/><path d="M16.5 16.5s1.5-1.5 1.5-3-1.5-3-1.5-3"/><path d="M12 18.5V22"/><path d="M12 2v1.5"/><path d="M8.5 4.5l-1-1"/><path d="M16.5 4.5l1-1"/><path d="M4.5 8.5l-1 1"/><path d="M20.5 8.5l1 1"/><path d="M12 12a4.5 4.5 0 0 0-4.5 4.5c0 2.21 1.5 4 3.5 4h2c2 0 3.5-1.79 3.5-4a4.5 4.5 0 0 0-4.5-4.5Z"/></svg>
+          <h1>CMLRE Data Explorer</h1>
+        </div>
+        
         <div className="stats-container">
-          <h4>Filtered Results</h4>
-          <div className="stat-item"><span>Total Sightings</span><strong>{summaryStats.totalSightings}</strong></div>
-          <div className="stat-item"><span>Avg. Abundance (kg/haul)</span><strong>{summaryStats.avgAbundance}</strong></div>
+            <div className="stat-card">
+                <div className="stat-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/></svg>
+                </div>
+                <div className="stat-info">
+                    <span className="stat-title">Total Sightings</span>
+                    <span className="stat-value">{summaryStats.totalSightings.toLocaleString()}</span>
+                </div>
+            </div>
+            <div className="stat-card">
+                 <div className="stat-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg>
+                 </div>
+                <div className="stat-info">
+                    <span className="stat-title">Avg. Abundance</span>
+                    <span className="stat-value">{summaryStats.avgAbundance}</span>
+                </div>
+            </div>
         </div>
-        <hr />
-        <h4>Filters & Layers</h4>
-        <div className="filter-group">
-          <label htmlFor="species-select">Species</label>
-          <select id="species-select" value={speciesFilter} onChange={e => setSpeciesFilter(e.target.value)}>
-            {uniqueSpecies.map(species => (<option key={species} value={species}>{species}</option>))}
-          </select>
+
+        <div className="filter-section">
+          <h4 className="sidebar-subtitle">Filters & Layers</h4>
+          <div className="filter-group">
+            <label htmlFor="species-select">Species</label>
+            <select id="species-select" value={speciesFilter} onChange={e => setSpeciesFilter(e.target.value)}>
+              {uniqueSpecies.map(species => (<option key={species} value={species}>{species}</option>))}
+            </select>
+          </div>
+          <div className="filter-group">
+            <label htmlFor="date-slider">Data up to: {dateFilter}</label>
+            <input type="date" id="date-slider" min={dateRange.min} max={dateRange.max} value={dateFilter} onChange={e => setDateFilter(e.target.value)} />
+          </div>
+          <div className="filter-group">
+            <label>Map Layers</label>
+            <div className="toggle-group">
+              <span>Heatmap</span>
+              <label className="switch">
+                <input type="checkbox" checked={showHeatmap} onChange={() => setShowHeatmap(!showHeatmap)} />
+                <span className="slider round"></span>
+              </label>
+            </div>
+             <div className="toggle-group">
+              <span>Survey Points</span>
+              <label className="switch">
+                <input type="checkbox" checked={showMarkers} onChange={() => setShowMarkers(!showMarkers)} />
+                <span className="slider round"></span>
+              </label>
+            </div>
+          </div>
         </div>
-        <div className="filter-group">
-          <label htmlFor="date-slider">Data up to: {dateFilter}</label>
-          <input type="date" id="date-slider" min={dateRange.min} max={dateRange.max} value={dateFilter} onChange={e => setDateFilter(e.target.value)} />
-        </div>
-        <div className="filter-group">
-          <label>Map Layers</label>
-          <div className="checkbox-group"><input type="checkbox" id="heatmap-toggle" checked={showHeatmap} onChange={() => setShowHeatmap(!showHeatmap)} /><label htmlFor="heatmap-toggle">Show Abundance Heatmap</label></div>
-          <div className="checkbox-group"><input type="checkbox" id="markers-toggle" checked={showMarkers} onChange={() => setShowMarkers(!showMarkers)} /><label htmlFor="markers-toggle">Show Survey Points</label></div>
-        </div>
-        <hr />
-        {/* --- The chart now gets data filtered only by date --- */}
+
         <SpeciesBarChart data={chartData} onBarClick={setSpeciesFilter} />
       </div>
       
       <MapContainer center={[15.0, 78.0]} zoom={5} scrollWheelZoom={true} className="map-view" whenCreated={setMap}>
-        <style>
-          {`
-            .legend { padding: 6px 8px; font: 14px Arial, Helvetica, sans-serif; background: rgba(255, 255, 255, 0.8); box-shadow: 0 0 15px rgba(0, 0, 0, 0.2); border-radius: 5px; line-height: 18px; color: #555; }
-            .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
-            .heatmap-legend .gradient-bar { height: 10px; margin-top: 5px; margin-bottom: 5px; background: linear-gradient(to right, #91cf60, #d9ef8b, #fee08b, #fc8d59, #d73027); }
-            
-            .chart-container { margin-top: 20px; }
-            .chart-container h4 { margin-top: 0; color: #495057; border-bottom: 1px solid #ced4da; padding-bottom: 5px; }
-            .bar-row { display: flex; align-items: center; margin-bottom: 5px; cursor: pointer; }
-            .bar-row:hover .bar-label { color: #007bff; }
-            .bar-label { font-size: 12px; width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; margin-right: 5px; }
-            .bar-wrapper { flex-grow: 1; background-color: #e9ecef; border-radius: 3px; }
-            .bar { background-color: #007bff; height: 20px; border-radius: 3px; color: white; font-size: 12px; line-height: 20px; padding-left: 5px; transition: width 0.3s ease-in-out; }
-          `}
-        </style>
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        <GeoJSON data={eezBoundary} style={() => ({ color: "#007bff", weight: 2, fillOpacity: 0.1 })} />
+        <TileLayer 
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" 
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' 
+        />
+        <GeoJSON data={eezBoundary} style={() => ({ color: "#00aaff", weight: 2, fillOpacity: 0.1, dashArray: '5, 5' })} />
         
         {showMarkers && <CircleLegend map={map} maxAbundance={maxAbundance} />}
         {showHeatmap && <HeatmapLegend map={map} />}
 
-        {showMarkers && mapData.map((feature, index) => { // <-- Renders mapData
+        {showMarkers && mapData.map((feature, index) => {
           const { species, abundance, date } = feature.properties;
           const [lng, lat] = feature.geometry.coordinates;
           const pathOptions = {
